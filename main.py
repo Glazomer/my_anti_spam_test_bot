@@ -1,7 +1,12 @@
-import telebot
 import re
+from datetime import datetime
+import telebot
 from tld import is_tld
 import bot_token
+
+
+def log(info: str):
+    print(str(datetime.now()) + ': ' + info)
 
 
 def get_valid_urls(string):
@@ -20,19 +25,41 @@ bot = telebot.TeleBot(bot_token.BOT_TOKEN)  # I DON'T KNOW HOW TO EXPORT STRING 
 
 @bot.message_handler(content_types=["new_chat_members"])
 def print_all(message):
-    new_users.add(message.from_user.id)
+    user_id = message.from_user.id
+    if user_id not in new_users:
+        new_users.add(user_id)
+        log(f'Added {user_id} to new_users list.')
+    else:
+        log(f'User {user_id} already in new_users list.')
 
 
 @bot.message_handler(content_types=["text"])
 def send_text(message):
-    if message.from_user.id in new_users:
-        new_users.discard(message.from_user.id)
-        urls = get_valid_urls(message.text)
-        body = "I've deleted spam with this urls: "
-        # print(urls)
+    user_id = message.from_user.id
+    user_name = message.from_user.username
+    chat_id = message.chat.id
+    msg_id = message.message_id
+    msg_text = message.text
+    if user_id in new_users:
+        log(f'Received first message {msg_id}: "{msg_text}" from "{user_id}".')
+        new_users.discard(user_id)
+        urls = get_valid_urls(msg_text)
         if len(urls):
-            bot.delete_message(message.chat.id, message.message_id)
-            bot.send_message(message.chat.id, body + ", ".join(urls))
+            log(f'Found these urls: "{str(urls)}" in {msg_id} ("{msg_text}").')
+
+            log(f'Deleting message {msg_id} from chat {chat_id}.')
+            bot.delete_message(chat_id, msg_id)
+
+            log(f'Kicking user {user_id} (@{user_name}) from chat {chat_id}.')
+            bot.kick_chat_member(chat_id, user_id)
+
+            admins = bot.get_chat_administrators(chat_id)
+            creator = next((member for member in admins if member.status == 'creator'), [False])
+            if creator:
+                bot.send_message(chat_id, f"I've just kicked {user_id} (@{user_name}). cc: @{creator.user.username}")
+
+        else:
+            log(f'Found no urls in {msg_id} ("{msg_text}").')
 
 
 bot.polling()
